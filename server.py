@@ -72,7 +72,7 @@ def db_name_exists(name):
     return row is not None
 
 # ── EMAIL ─────────────────────────────────────────────────────────────────────
-def send_code(to_email: str, code: str) -> tuple[bool, str]:
+def send_code(to_email, code):
     if not MAIL_FROM or not MAIL_PASS:
         # режим разработки — просто печатаем код
         print(f"[DEV] Код для {to_email}: {code}")
@@ -87,7 +87,10 @@ def send_code(to_email: str, code: str) -> tuple[bool, str]:
         msg["Subject"] = f"Код подтверждения: {code}"
         msg["From"]    = MAIL_FROM
         msg["To"]      = to_email
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as s:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as s:
+            s.ehlo()
+            s.starttls()
+            s.ehlo()
             s.login(MAIL_FROM, MAIL_PASS)
             s.sendmail(MAIL_FROM, to_email, msg.as_string())
         return True, "ok"
