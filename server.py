@@ -24,6 +24,7 @@ PORT        = int(os.environ.get("PORT", 8765))
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 ADMIN       = "ваирт настаяши"
 badges      = {}  # name -> badge emoji
+banned      = set()  # banned names
 
 # ── БД ────────────────────────────────────────────────────────────────────────
 def get_conn():
@@ -112,6 +113,8 @@ async def handler(ws: WebSocketServerProtocol):
             if t == "register":
                 uname = msg.get("name","").strip()[:24]
                 pw    = msg.get("password","")
+                if uname in banned:
+                    await send(ws, {"type":"auth_error","text":"⛔ Ты заблокирован!"}); continue
                 if len(uname) < 2:
                     await send(ws, {"type":"auth_error","text":"Ник минимум 2 символа!"}); continue
                 if len(pw) < 6:
@@ -132,6 +135,8 @@ async def handler(ws: WebSocketServerProtocol):
             elif t == "login":
                 uname = msg.get("name","").strip()
                 pw    = msg.get("password","")
+                if uname in banned:
+                    await send(ws, {"type":"auth_error","text":"⛔ Ты заблокирован!"}); continue
                 if len(uname) < 2:
                     await send(ws, {"type":"auth_error","text":"Введи ник!"}); continue
                 ok, err = db_login(uname, pw)
@@ -177,6 +182,30 @@ async def handler(ws: WebSocketServerProtocol):
             elif t in ("call_request","call_response","call_end"):
                 to = msg.get("to"); tw = find_ws(to)
                 if tw: await send(tw, {**msg,"from":name})
+
+            elif t == "ban":
+                if name == ADMIN:
+                    target = msg.get("target","")
+                    if target and target != ADMIN:
+                        banned.add(target)
+                        # kick if online
+                        tw = find_ws(target)
+                        if tw:
+                            await send(tw, {"type":"kicked","text":"⛔ Ты заблокирован администратором!"})
+                            try: await tw.close()
+                            except: pass
+                        await broadcast({"type":"system","text":f"⛔ {target} заблокирован"})
+                        await broadcast_users()
+                else:
+                    await send(ws, {"type":"system","text":"⛔ Нет прав!"})
+
+            elif t == "unban":
+                if name == ADMIN:
+                    target = msg.get("target","")
+                    banned.discard(target)
+                    await send(ws, {"type":"system","text":f"✅ {target} разблокирован"})
+                else:
+                    await send(ws, {"type":"system","text":"⛔ Нет прав!"})
 
             elif t == "set_badge":
                 if name == ADMIN:
