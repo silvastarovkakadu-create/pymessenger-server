@@ -22,6 +22,8 @@ except:
 
 PORT        = int(os.environ.get("PORT", 8765))
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
+ADMIN       = "ваирт настаяши"
+badges      = {}  # name -> badge emoji
 
 # ── БД ────────────────────────────────────────────────────────────────────────
 def get_conn():
@@ -121,6 +123,9 @@ async def handler(ws: WebSocketServerProtocol):
                     await send(ws, {"type":"auth_ok","name":name})
                     await broadcast({"type":"system","text":f"🟢 {name} вошёл в чат"}, exclude=ws)
                     await broadcast_users()
+                    await send(ws, {"type":"all_badges","badges":badges})
+                    is_admin = (name == ADMIN)
+                    await send(ws, {"type":"admin_status","is_admin":is_admin})
                 else:
                     await send(ws, {"type":"auth_error","text":err})
 
@@ -136,6 +141,9 @@ async def handler(ws: WebSocketServerProtocol):
                     await send(ws, {"type":"auth_ok","name":name})
                     await broadcast({"type":"system","text":f"🟢 {name} вошёл в чат"}, exclude=ws)
                     await broadcast_users()
+                    await send(ws, {"type":"all_badges","badges":badges})
+                    is_admin = (name == ADMIN)
+                    await send(ws, {"type":"admin_status","is_admin":is_admin})
                 else:
                     await send(ws, {"type":"auth_error","text":err})
 
@@ -169,6 +177,24 @@ async def handler(ws: WebSocketServerProtocol):
             elif t in ("call_request","call_response","call_end"):
                 to = msg.get("to"); tw = find_ws(to)
                 if tw: await send(tw, {**msg,"from":name})
+
+            elif t == "set_badge":
+                if name == ADMIN:
+                    target = msg.get("target","")
+                    badge  = msg.get("badge","")
+                    if badge:
+                        badges[target] = badge
+                    else:
+                        badges.pop(target, None)
+                    # broadcast badge update to all
+                    await broadcast({"type":"badge_update",
+                                     "target": target,
+                                     "badge": badge})
+                else:
+                    await send(ws, {"type":"system","text":"⛔ Нет прав!"})
+
+            elif t == "get_badges":
+                await send(ws, {"type":"all_badges","badges": badges})
 
     except websockets.ConnectionClosed:
         pass
