@@ -1,52 +1,85 @@
 #!/usr/bin/env python3
 """
-PyMessenger — Сервер (аккаунты: ник + пароль)
-pip install websockets
-python server.py
+PyMessenger — Сервер (аккаунты в PostgreSQL — не теряются при перезапуске)
+
+Зависимости:
+    pip install websockets psycopg2-binary
+
+Переменные окружения на Render:
+    DATABASE_URL — выдаётся автоматически если подключить PostgreSQL на Render
 """
 
-import asyncio, json, time, os, sqlite3, hashlib
+import asyncio, json, time, os, hashlib
 import websockets
 from websockets.server import WebSocketServerProtocol
 
-PORT     = int(os.environ.get("PORT", 8765))
-DB       = "accounts.db"
-CODE_TTL = 300
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    DB_OK = True
+except:
+    DB_OK = False
+
+PORT        = int(os.environ.get("PORT", 8765))
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
+# ── БД ────────────────────────────────────────────────────────────────────────
+def get_conn():
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 def init_db():
-    con = sqlite3.connect(DB)
-    con.execute("""CREATE TABLE IF NOT EXISTS accounts (
-        name     TEXT PRIMARY KEY,
-        password TEXT NOT NULL,
-        created  INTEGER NOT NULL
-    )""")
-    con.commit(); con.close()
+    if not DB_OK or not DATABASE_URL:
+        print("⚠️  DATABASE_URL не задан — аккаунты не сохраняются!")
+        return
+    try:
+        con = get_conn()
+        con.cursor().execute("""
+            CREATE TABLE IF NOT EXISTS accounts (
+                name     TEXT PRIMARY KEY,
+                password TEXT NOT NULL,
+                created  BIGINT NOT NULL
+            )
+        """)
+        con.commit(); con.close()
+        print("✅ База данных подключена")
+    except Exception as e:
+        print(f"❌ Ошибка БД: {e}")
 
 def hash_pw(pw): return hashlib.sha256(pw.encode()).hexdigest()
 
 def db_register(name, pw):
+    if not DB_OK or not DATABASE_URL:
+        return True, "ok"  # без БД просто пускаем
     try:
-        con = sqlite3.connect(DB)
-        con.execute("INSERT INTO accounts VALUES (?,?,?)",
+        con = get_conn()
+        cur = con.cursor()
+        cur.execute("INSERT INTO accounts VALUES (%s,%s,%s)",
                     (name, hash_pw(pw), int(time.time())))
-        con.commit(); return True, "ok"
-    except sqlite3.IntegrityError:
-        return False, "Этот ник уже занят!"
-    finally:
+        con.commit(); con.close()
+        return True, "ok"
+    except Exception as e:
         try: con.close()
         except: pass
+        if "unique" in str(e).lower() or "duplicate" in str(e).lower():
+            return False, "Этот ник уже занят!"
+        return False, f"Ошибка: {e}"
 
 def db_login(name, pw):
-    con = sqlite3.connect(DB)
-    row = con.execute("SELECT password FROM accounts WHERE name=?",
-                      (name,)).fetchone()
-    con.close()
-    if not row: return False, "Пользователь не найден!"
-    if row[0] != hash_pw(pw): return False, "Неверный пароль!"
-    return True, "ok"
+    if not DB_OK or not DATABASE_URL:
+        return True, "ok"  # без БД просто пускаем
+    try:
+        con = get_conn()
+        cur = con.cursor()
+        cur.execute("SELECT password FROM accounts WHERE name=%s", (name,))
+        row = cur.fetchone(); con.close()
+        if not row: return False, "Пользователь не найден!"
+        if row[0] != hash_pw(pw): return False, "Неверный пароль!"
+        return True, "ok"
+    except Exception as e:
+        return False, f"Ошибка: {e}"
 
-# ── сервер ────────────────────────────────────────────────────────────────────
-clients = {}  # ws -> {"name": str}
+# ── СЕРВЕР ────────────────────────────────────────────────────────────────────
+clients = {}
 
 async def send(ws, obj):
     try: await ws.send(json.dumps(obj, ensure_ascii=False))
@@ -94,6 +127,8 @@ async def handler(ws: WebSocketServerProtocol):
             elif t == "login":
                 uname = msg.get("name","").strip()
                 pw    = msg.get("password","")
+                if len(uname) < 2:
+                    await send(ws, {"type":"auth_error","text":"Введи ник!"}); continue
                 ok, err = db_login(uname, pw)
                 if ok:
                     name = uname; authed = True
