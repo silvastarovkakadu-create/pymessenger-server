@@ -503,6 +503,24 @@ class App(tk.Tk):
         self.gen_btn = self._crow(self.li, "general", "Общий чат", "Добро пожаловать!")
         self.gen_btn.pack(fill=tk.X)
 
+        # Restore DM buttons from history
+        old_dm = list(self._dm_btns.keys())
+        self._dm_btns = {}
+        for uname in old_dm:
+            btn = self._crow(self.li, uname, uname, "Личные сообщения")
+            btn.pack(fill=tk.X)
+            self._dm_btns[uname] = btn
+            # restore last message preview
+            msgs = self.history.get(uname, [])
+            if msgs:
+                last = msgs[-1]
+                text = last.get("text","") or last.get("filename","файл")
+                sender = last.get("name") or last.get("from","")
+                btn._sub.config(text=f"{sender}: {text}"[:35])
+                btn._time.config(text=last.get("time",""))
+            n = self.unread.get(uname, 0)
+            if n: btn._badge.config(text=str(n))
+
         # ── RIGHT AREA ──
         self.right = tk.Frame(self._main, bg=BG2)
         self.right.pack(fill=tk.BOTH, expand=True)

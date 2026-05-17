@@ -234,6 +234,8 @@ async def handler(ws: WebSocketServerProtocol):
             await broadcast_users()
 
 async def main():
+    print(f"DB URL: {DATABASE_URL[:40] if DATABASE_URL else 'ПУСТО'}")
+    print(f"DB_OK: {DB_OK}")
     init_db()
     print(f"✅ Сервер запущен на порту {PORT}")
     async with websockets.serve(handler, "0.0.0.0", PORT, max_size=50*1024*1024):
