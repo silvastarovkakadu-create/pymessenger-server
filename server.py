@@ -9,7 +9,8 @@ PyMessenger — Сервер (аккаунты в PostgreSQL — не теряю
     DATABASE_URL — выдаётся автоматически если подключить PostgreSQL на Render
 """
 
-import asyncio, json, time, os, hashlib
+import asyncio, json, time, os, hashlib, sys
+sys.stdout.reconfigure(line_buffering=True)
 import websockets
 from websockets.server import WebSocketServerProtocol
 
@@ -32,7 +33,7 @@ def get_conn():
 
 def init_db():
     if not DB_OK or not DATABASE_URL:
-        print("⚠️  DATABASE_URL не задан — аккаунты не сохраняются!")
+        print("⚠️  DATABASE_URL не задан — аккаунты не сохраняются!", flush=True)
         return
     try:
         con = get_conn()
@@ -44,9 +45,9 @@ def init_db():
             )
         """)
         con.commit(); con.close()
-        print("✅ База данных подключена")
+        print("✅ База данных подключена", flush=True)
     except Exception as e:
-        print(f"❌ Ошибка БД: {e}")
+        print(f"❌ Ошибка БД: {e}", flush=True)
 
 def hash_pw(pw): return hashlib.sha256(pw.encode()).hexdigest()
 
@@ -234,10 +235,10 @@ async def handler(ws: WebSocketServerProtocol):
             await broadcast_users()
 
 async def main():
-    print(f"DB URL: {DATABASE_URL[:40] if DATABASE_URL else 'ПУСТО'}")
-    print(f"DB_OK: {DB_OK}")
+    print(f"DB URL: {DATABASE_URL[:40] if DATABASE_URL else 'ПУСТО'}", flush=True)
+    print(f"DB_OK: {DB_OK}", flush=True)
     init_db()
-    print(f"✅ Сервер запущен на порту {PORT}")
+    print(f"✅ Сервер запущен на порту {PORT}", flush=True)
     async with websockets.serve(handler, "0.0.0.0", PORT, max_size=50*1024*1024):
         await asyncio.Future()
 
